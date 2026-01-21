@@ -39,29 +39,46 @@ test('navigate to configurable URL', async ({ page }) => {
 
   // Click each active unit, wait for page load, then go back
   for (let i = 0; i < count; i++) {
-    console.log(`Clicking active unit ${i + 1} of ${count}`);
-    
     // Re-locate the elements on each iteration (in case page state changed)
     const currentActiveUnits = page.locator('.QflowObjectItem.form-control.ui-selectable.Active-Unit.valid');
-    await currentActiveUnits.nth(i).click();
     
+    // Get the city name from the active unit
+    const cityNameDiv = currentActiveUnits.nth(i).locator('div > div:nth-child(1)');
+    const cityName = await cityNameDiv.textContent().catch(() => 'Unknown');
+    
+    // console.log(`Clicking active unit ${i + 1} of ${count}: ${cityName}`);
+    
+    await currentActiveUnits.nth(i).click();
+
     // Wait for loading overlay to disappear (indicating page transition completed)
     await page.locator('#BlockLoader').waitFor({ state: 'hidden', timeout: 10000 });
-    
+
     // Wait for network to be idle (all requests completed)
     await page.waitForLoadState('networkidle');
-    
+
     // Additional wait to ensure SPA is fully rendered
     await page.waitForTimeout(1000);
+
+    // Check for appointment availability
+    const noAppointmentsError = page.locator('span.field-validation-error', {
+      hasText: 'This office does not currently have any appointments available in the next 7 days'
+    });
+    const isErrorVisible = await noAppointmentsError.isVisible().catch(() => false);
     
-    console.log(`Active unit ${i + 1} fully loaded, going back`);
-    
+    if (isErrorVisible) {
+      console.log(`${cityName}: Nothing available`);
+    } else {
+      console.log(`${cityName}: Appointments available`);
+    }
+
+    // console.log(`Active unit ${i + 1} fully loaded, going back`);
+
     // Go back to the previous page
     await page.goBack();
-    
+
     // Wait for loading overlay to disappear after going back
     await page.locator('#BlockLoader').waitFor({ state: 'hidden', timeout: 10000 });
-    
+
     // Wait for active units to appear again
     await page.waitForSelector('.QflowObjectItem.form-control.ui-selectable.Active-Unit.valid', { timeout: 10000 });
   }
