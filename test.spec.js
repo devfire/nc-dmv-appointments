@@ -35,11 +35,11 @@ test('navigate to configurable URL', async ({ page }) => {
   // Find all elements with the specific classes
   const activeUnits = page.locator('.QflowObjectItem.form-control.ui-selectable.Active-Unit.valid');
   const count = await activeUnits.count();
-  console.log(`Found ${count} active units`);
+  console.log(`Found ${count} locations to check for appointments`);
   
   // If no active units are available, exit gracefully
   if (count === 0) {
-    console.log('No active units available at this time.');
+    console.log('No appointments anywhere available at this time.');
     return;
   }
 
@@ -97,7 +97,7 @@ test('navigate to configurable URL', async ({ page }) => {
     await page.waitForSelector('.QflowObjectItem.form-control.ui-selectable.Active-Unit.valid', { timeout: 10000 });
   }
 
-  console.log(`Completed clicking all ${count} active units`);
+  console.log(`Completed clicking all ${count} locations`);
 
   // Verify navigation was successful
   expect(page.url()).toContain(new URL(BASE_URL).hostname);
