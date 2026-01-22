@@ -44,7 +44,8 @@ Copy `.env.example` to `.env` and customize:
 - `APPOINTMENT_TYPE_TEXT=Limited provisional license - ages 16-17; Level 1 permit` - Use exact text
 
 ### How to get the appointment TYPE_ID
-- Right click on the appointment you need and select 'Inspect'
+- Inspect element on DMV site → look for `data-id` or text in `<div class="form-control-child">`.
+- Easy way: right click on the appointment you need and select 'Inspect'
 - The ID is one line above the inspected element
 ![alt text](image-1.png)
 
@@ -52,8 +53,6 @@ Copy `.env.example` to `.env` and customize:
 - `BASE_URL` - DMV appointment URL
 - `LATITUDE` / `LONGITUDE` - Your location (defaults to Raleigh, NC)
 - `HEADLESS=true` / `SLOW_MO=0` - Test execution options
-
-To find appointment type: Inspect element on DMV site → look for `data-id` or text in `<div class="form-control-child">`.
 
 ## Usage
 
