@@ -46,7 +46,7 @@ Copy `.env.example` to `.env` and customize:
 ### How to get the appointment TYPE_ID
 - Right click on the appointment you need and select 'Inspect'
 - The ID is one line above the inspected element
-![alt text](image.png)
+![alt text](image-1.png)
 
 **Other Options**:
 - `BASE_URL` - DMV appointment URL
