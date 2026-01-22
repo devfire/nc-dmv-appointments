@@ -4,7 +4,6 @@ export class AppointmentPage {
     // Locators
     this.makeApptButton = page.locator('button#cmdMakeAppt');
     this.blockLoader = page.locator('#BlockLoader');
-    this.teenDriverOption = page.locator('[data-id="10"].QflowObjectItem');
     this.activeUnits = page.locator('.QflowObjectItem.form-control.ui-selectable.Active-Unit.valid');
     this.noAppointmentsError = page.locator('span.field-validation-error');
     this.errorHiddenInput = page.locator('input[name="StepControls[1].FieldName"][value="ErrorNoAvaiableDates"]');
@@ -34,12 +33,37 @@ export class AppointmentPage {
   }
 
   /**
-   * Select Teen Driver Level 1 appointment type
+   * Select appointment type by ID or text
+   * @param {string} appointmentTypeId - The data-id attribute value (optional)
+   * @param {string} appointmentTypeText - The text content to match (optional)
+   * @throws {Error} If neither appointmentTypeId nor appointmentTypeText is provided
+   */
+  async selectAppointmentType(appointmentTypeId, appointmentTypeText) {
+    if (!appointmentTypeId && !appointmentTypeText) {
+      throw new Error('Either appointmentTypeId or appointmentTypeText must be provided');
+    }
+
+    let appointmentOption;
+    
+    if (appointmentTypeId) {
+      // Select by data-id attribute
+      appointmentOption = this.page.locator(`[data-id="${appointmentTypeId}"].QflowObjectItem`);
+    } else {
+      // Select by text content
+      appointmentOption = this.page.locator('.QflowObjectItem .form-control-child', { hasText: appointmentTypeText });
+    }
+    
+    await appointmentOption.waitFor({ state: 'visible', timeout: 10000 });
+    await appointmentOption.click();
+    await this.blockLoader.waitFor({ state: 'hidden', timeout: 10000 });
+  }
+
+  /**
+   * Select Teen Driver Level 1 appointment type (legacy method for backwards compatibility)
+   * @deprecated Use selectAppointmentType() instead
    */
   async selectTeenDriver() {
-    await this.teenDriverOption.waitFor({ state: 'visible', timeout: 10000 });
-    await this.teenDriverOption.click();
-    await this.blockLoader.waitFor({ state: 'hidden', timeout: 10000 });
+    await this.selectAppointmentType('10', null);
   }
 
   /**

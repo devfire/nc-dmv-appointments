@@ -1,6 +1,6 @@
 # NC DMV Appointment Checker
 
-Automated Playwright tests to check NC DMV appointment availability across multiple locations for Teen Driver Level 1 appointments.
+Automated Playwright tests to check NC DMV appointment availability across multiple locations for any appointment type.
 
 ## Purpose
 
@@ -34,6 +34,21 @@ npx playwright install chromium
 cp .env.example .env
 # Edit .env with your preferred settings
 ```
+
+## Configuration
+
+Copy `.env.example` to `.env` and customize:
+
+**Appointment Type** (choose one method):
+- `APPOINTMENT_TYPE_ID=10` - Use `data-id` attribute (preferred)
+- `APPOINTMENT_TYPE_TEXT=Limited provisional license - ages 16-17; Level 1 permit` - Use exact text
+
+**Other Options**:
+- `BASE_URL` - DMV appointment URL
+- `LATITUDE` / `LONGITUDE` - Your location (defaults to Raleigh, NC)
+- `HEADLESS=true` / `SLOW_MO=0` - Test execution options
+
+To find appointment type: Inspect element on DMV site → look for `data-id` or text in `<div class="form-control-child">`.
 
 ## Usage
 

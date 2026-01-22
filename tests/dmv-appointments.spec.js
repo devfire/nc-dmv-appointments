@@ -8,6 +8,8 @@ const GEOLOCATION = {
   latitude: parseFloat(process.env.LATITUDE) || 35.7796,  // Raleigh, NC
   longitude: parseFloat(process.env.LONGITUDE) || -78.6382
 };
+const APPOINTMENT_TYPE_ID = process.env.APPOINTMENT_TYPE_ID || '10'; // Default to teen driver
+const APPOINTMENT_TYPE_TEXT = process.env.APPOINTMENT_TYPE_TEXT || null;
 
 test.describe('NC DMV Appointment Checker', () => {
   let appointmentPage;
@@ -28,12 +30,12 @@ test.describe('NC DMV Appointment Checker', () => {
     });
   });
 
-  test('should check all locations for teen driver appointments', async ({ page }) => {
+  test('should check all locations for appointments', async ({ page }) => {
     // Navigate to appointment selection
     let hasActiveUnits = false;
     await test.step('Select appointment type', async () => {
       await appointmentPage.clickMakeAppointment();
-      await appointmentPage.selectTeenDriver();
+      await appointmentPage.selectAppointmentType(APPOINTMENT_TYPE_ID, APPOINTMENT_TYPE_TEXT);
       hasActiveUnits = await appointmentPage.waitForActiveUnitsLoad();
     });
 
