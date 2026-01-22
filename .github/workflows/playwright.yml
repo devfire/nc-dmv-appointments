@@ -1,0 +1,61 @@
+name: Playwright Tests
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  schedule:
+    # Run daily at 8 AM and 5 PM EST (adjust as needed)
+    - cron: '0 13,22 * * *'
+  workflow_dispatch:
+
+jobs:
+  test:
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Install Playwright browsers
+      run: npx playwright install --with-deps chromium
+
+    - name: Run Playwright tests
+      run: npm test
+      env:
+        BASE_URL: ${{ secrets.BASE_URL || 'https://skiptheline.ncdot.gov/Webapp/Appointment/Index/a7ade79b-996d-4971-8766-97feb75254de' }}
+        LATITUDE: ${{ secrets.LATITUDE || '35.7796' }}
+        LONGITUDE: ${{ secrets.LONGITUDE || '-78.6382' }}
+
+    - name: Upload test results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: playwright-report
+        path: playwright-report/
+        retention-days: 30
+
+    - name: Upload screenshots
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: screenshots
+        path: test-results/
+        retention-days: 30
+
+    - name: Comment PR with results
+      uses: daun/playwright-report-comment@v3
+      if: always() && github.event_name == 'pull_request'
+      with:
+        report-path: playwright-report/index.html
