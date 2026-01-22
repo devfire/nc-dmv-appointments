@@ -39,11 +39,11 @@ cp .env.example .env
 
 Copy `.env.example` to `.env` and customize:
 
-**Appointment Type** (choose one method):
+### Appointment Type (choose one method):
 - `APPOINTMENT_TYPE_ID=10` - Use `data-id` attribute (preferred)
 - `APPOINTMENT_TYPE_TEXT=Limited provisional license - ages 16-17; Level 1 permit` - Use exact text
 
-***How to get the appointment ID***
+### How to get the appointment TYPE_ID
 - Right click on the appointment you need and select 'Inspect'
 - The ID is one line above the inspected element
 ![alt text](image.png)
