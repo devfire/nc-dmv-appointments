@@ -7,6 +7,8 @@ export class AppointmentPage {
     this.activeUnits = page.locator('.QflowObjectItem.form-control.ui-selectable.Active-Unit.valid');
     this.noAppointmentsError = page.locator('span.field-validation-error');
     this.errorHiddenInput = page.locator('input[name="StepControls[1].FieldName"][value="ErrorNoAvaiableDates"]');
+    this.appointmentHeading = page.locator('text=Please select date and time');
+    this.calendarDates = page.locator('.calendar-day, .ui-datepicker-calendar td:not(.ui-datepicker-unselectable)');
   }
 
   /**
@@ -118,17 +120,33 @@ export class AppointmentPage {
    * @returns {Promise<boolean>} True if appointments are available
    */
   async hasAppointmentsAvailable() {
-    // Check for error message
+    // Wait a moment for the page to stabilize after navigation
+    await this.page.waitForTimeout(1000);
+    
+    // First check for positive indicator - the appointment selection heading
+    const hasAppointmentHeading = await this.appointmentHeading.isVisible().catch(() => false);
+    if (hasAppointmentHeading) {
+      return true; // If we see the appointment selector, appointments are available
+    }
+    
+    // Check for error message (negative indicator)
     const errorVisible = await this.noAppointmentsError
       .filter({ hasText: 'This office does not currently have any appointments available' })
       .isVisible()
       .catch(() => false);
     
-    // Check for hidden input indicating no dates
-    const errorInputCount = await this.errorHiddenInput.count();
+    if (errorVisible) {
+      return false; // Explicit error message
+    }
     
-    // Appointments available if neither error condition exists
-    return !errorVisible && errorInputCount === 0;
+    // Check for hidden input indicating no dates (negative indicator)
+    const errorInputCount = await this.errorHiddenInput.count();
+    if (errorInputCount > 0) {
+      return false; // Hidden error input present
+    }
+    
+    // If no clear positive or negative indicators, return true (optimistic)
+    return true;
   }
 
   /**
