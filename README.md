@@ -4,11 +4,15 @@ Automated Playwright tests to check NC DMV appointment availability across multi
 
 ## Purpose
 
-This tool automates the process of checking appointment availability at all NC DMV locations, saving time and effort in finding available appointment slots. Because what's happening now is a pure travesty.
+Automates checking appointment availability at all NC DMV locations, saving time and effort finding available slots.
 
-## New: API-Based Detection
+## Features
 
-The checker now uses API response interception instead of DOM parsing for more reliable appointment detection. This works seamlessly with the DMV's dynamic calendar widget (SPA). See [`API_APPROACH.md`](API_APPROACH.md) for technical details.
+- **API-Based Detection** - Intercepts API responses for reliable appointment detection (works with dynamic calendar widgets)
+- **Multi-Location Scanning** - Checks all available DMV locations in a single run
+- **Detailed Results** - Shows available dates and time slots for each location
+- **Screenshot Capture** - Automatically captures screenshots when appointments are found
+- **Summary Reports** - Provides formatted summary of availability across all locations
 
 ## Prerequisites
 
@@ -17,71 +21,63 @@ The checker now uses API response interception instead of DOM parsing for more r
 
 ## Setup
 
-1. **Clone the repository**
 ```bash
+# Clone and install
 git clone <repository-url>
 cd nc-dmv-appointments
-```
-
-2. **Install dependencies**
-```bash
 npm install
-```
 
-3. **Install Playwright browsers**
-```bash
+# Install Playwright browsers
 npx playwright install chromium
-```
 
-4. **Configure environment (optional)**
-```bash
+# Configure environment (optional)
 cp .env.example .env
-# Edit .env with your preferred settings
 ```
 
 ## Configuration
 
 Copy `.env.example` to `.env` and customize:
 
-### Appointment Type (choose one method):
-- `APPOINTMENT_TYPE_ID=10` - Use `data-id` attribute (preferred)
-- `APPOINTMENT_TYPE_TEXT=Limited provisional license - ages 16-17; Level 1 permit` - Use exact text
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `BASE_URL` | DMV appointment URL | NC DMV default URL |
+| `LATITUDE` / `LONGITUDE` | Your location | Raleigh, NC |
+| `APPOINTMENT_TYPE_ID` | Appointment type ID (preferred) | `10` |
+| `APPOINTMENT_TYPE_TEXT` | Appointment type text (fallback) | - |
+| `HEADLESS` | Run without browser UI | `true` |
+| `SLOW_MO` | Slow down test execution | `0` |
 
-### How to get the appointment TYPE_ID
-- Inspect element on DMV site → look for `data-id` or text in `<div class="form-control-child">`.
-- Easy way: right click on the appointment you need and select 'Inspect'
-- The ID is one line above the inspected element
-![alt text](image-1.png)
+### Finding Appointment Type ID
 
-**Other Options**:
-- `BASE_URL` - DMV appointment URL
-- `LATITUDE` / `LONGITUDE` - Your location (defaults to Raleigh, NC)
-- `HEADLESS=true` / `SLOW_MO=0` - Test execution options
+1. Right-click on the appointment type you need on the DMV site
+2. Select "Inspect"
+3. Look for `data-id` attribute on the element (one line above the inspected element)
 
 ## Usage
 
-### Run Tests
-
 ```bash
-# Run tests in headless mode
-npm test
+# Run tests
+npm test              # Headless mode
+npm run test:headed   # With browser visible
+npm run test:debug    # Debug mode with inspector
+npm run test:ui       # Interactive UI mode
 
-# Run tests with browser visible
-npm run test:headed
-
-# Debug mode with Playwright Inspector
-npm run test:debug
-
-# Interactive UI mode
-npm run test:ui
-```
-
-### View Reports
-
-```bash
-# Open HTML report after test run
+# View HTML report
 npm run report
 ```
+
+## Output
+
+The test provides:
+- Real-time status for each location checked
+- Available dates when appointments are found
+- Time slots for the first available date
+- Screenshots saved to `test-results/` for locations with availability
+- Summary report at the end
+
+## Technical Details
+
+See [`API_APPROACH.md`](API_APPROACH.md) for details on the API interception implementation and debugging methods.
 
 ## Disclaimer
 
