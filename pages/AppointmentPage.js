@@ -462,4 +462,267 @@ export class AppointmentPage {
       console.error(`Failed to save API response: ${error.message}`);
     }
   }
+
+  /**
+   * Get all available calendar dates
+   * @returns {Promise<Array>} Array of available date elements
+   */
+  async getAvailableDates() {
+    // Wait for the appointment heading to ensure we're on the right page
+    const hasAppointmentSection = await this.page.waitForSelector('text=Please select date and time', { timeout: 5000 }).catch(() => false);
+
+    if (!hasAppointmentSection) {
+      console.log('Appointment selection section not visible');
+      return [];
+    }
+
+    // Wait a bit for calendar to render
+    await this.page.waitForTimeout(1000);
+
+    // Try multiple selectors for available dates
+    const selectors = [
+      '.calendar-day.available',
+      '.ui-datepicker-calendar td:not(.ui-datepicker-unselectable):not(.ui-datepicker-other-month) a',
+      'td[data-handler="selectDay"] a',
+      '.ui-state-default',
+      '.calendar-container td.available'
+    ];
+
+    for (const selector of selectors) {
+      const dates = await this.page.locator(selector).all();
+      if (dates.length > 0) {
+        console.log(`Found ${dates.length} dates using selector: ${selector}`);
+        return dates;
+      }
+    }
+
+    console.log('No available dates found with any selector');
+    return [];
+  }
+
+  /**
+   * Select a calendar date by index
+   * @param {number} index - Index of the date to select (default: 0 for first available)
+   * @returns {Promise<boolean>} True if date was selected, false if no dates available
+   */
+  async selectDate(index = 0) {
+    const dates = await this.getAvailableDates();
+
+    if (dates.length === 0) {
+      console.log('No dates available');
+      return false;
+    }
+
+    if (index >= dates.length) {
+      console.log(`Index ${index} out of range. Only ${dates.length} dates available.`);
+      return false;
+    }
+
+    await dates[index].click();
+
+    // Wait for time slots to load - check for both select dropdowns and radio inputs
+    await Promise.race([
+      this.page.waitForSelector('select option[data-datetime]', { timeout: 5000 }),
+      this.page.waitForSelector('input[type="radio"][data-datetime]', { timeout: 5000 })
+    ]).catch(() => null);
+
+    return true;
+  }
+
+  /**
+   * Get all available time slots with their datetime and value
+   * @returns {Promise<Array>} Array of time slot objects with datetime and value properties
+   */
+  async getTimeSlots() {
+    // Get time slots from select dropdown
+    const timeSlots = await this.page.evaluate(() => {
+      const selects = document.querySelectorAll('select');
+      const slots = [];
+
+      selects.forEach(select => {
+        const options = select.querySelectorAll('option[data-datetime]');
+        options.forEach(option => {
+          const datetime = option.getAttribute('data-datetime');
+          // Skip empty options (the "-" placeholder)
+          if (datetime && datetime.trim()) {
+            slots.push({
+              datetime: datetime,
+              value: option.textContent.trim(),
+              selectId: select.getAttribute('id'),
+              serviceId: option.getAttribute('data-serviceid'),
+              appointmentTypeId: option.getAttribute('data-appointmenttypeid')
+            });
+          }
+        });
+      });
+
+      return slots;
+    });
+
+    if (timeSlots.length > 0) {
+      console.log(`Found ${timeSlots.length} time slots in select dropdown`);
+      return timeSlots;
+    }
+
+    // Fallback to radio inputs
+    const radioTimeSlots = await this.page.evaluate(() => {
+      const inputs = document.querySelectorAll('input[type="radio"][data-datetime]');
+
+      return Array.from(inputs).map(input => ({
+        datetime: input.getAttribute('data-datetime'),
+        value: input.getAttribute('value'),
+        id: input.getAttribute('id')
+      }));
+    });
+
+    if (radioTimeSlots.length > 0) {
+      console.log(`Found ${radioTimeSlots.length} time slots in radio inputs`);
+      return radioTimeSlots;
+    }
+
+    console.log('No time slots found');
+    return [];
+  }
+
+  /**
+   * Get morning time slots (AM times with hour >= 8)
+   * @returns {Promise<Array>} Array of morning time slot objects
+   */
+  async getMorningTimeSlots() {
+    const allSlots = await this.getTimeSlots();
+
+    return allSlots.filter(slot => {
+      if (!slot.datetime) return false;
+      const time = slot.datetime.split(' ')[1]; // Extract time portion
+      const hour = parseInt(time.split(':')[0]);
+      return slot.datetime.includes('AM') && hour >= 8;
+    });
+  }
+
+  /**
+   * Get afternoon time slots (PM times before 5 PM)
+   * @returns {Promise<Array>} Array of afternoon time slot objects
+   */
+  async getAfternoonTimeSlots() {
+    const allSlots = await this.getTimeSlots();
+
+    return allSlots.filter(slot => {
+      if (!slot.datetime) return false;
+      const time = slot.datetime.split(' ')[1]; // Extract time portion
+      const hour = parseInt(time.split(':')[0]);
+      return slot.datetime.includes('PM') && hour < 5;
+    });
+  }
+
+  /**
+   * Select a time slot by value
+   * @param {string} value - The value/text of the time slot (e.g., "8:00 AM")
+   * @param {string} selectId - Optional select element ID for dropdown selection
+   * @returns {Promise<boolean>} True if slot was selected successfully
+   */
+  async selectTimeSlot(value, selectId = null) {
+    try {
+      // Try select dropdown first
+      if (selectId) {
+        await this.page.selectOption(`#${selectId}`, { label: value });
+        console.log(`Selected time slot from dropdown: ${value}`);
+        return true;
+      }
+
+      // Try to find a select with the matching option
+      const selected = await this.page.evaluate((timeValue) => {
+        const selects = document.querySelectorAll('select');
+        for (const select of selects) {
+          const options = select.querySelectorAll('option');
+          for (const option of options) {
+            if (option.textContent.trim() === timeValue) {
+              select.value = option.value;
+              select.dispatchEvent(new Event('change', { bubbles: true }));
+              return true;
+            }
+          }
+        }
+        return false;
+      }, value);
+
+      if (selected) {
+        console.log(`Selected time slot from dropdown: ${value}`);
+        return true;
+      }
+
+      // Fallback to radio button
+      await this.page.click(`input[type="radio"][value="${value}"]`);
+      console.log(`Selected time slot radio: ${value}`);
+      return true;
+    } catch (error) {
+      console.error(`Failed to select time slot: ${error.message}`);
+      return false;
+    }
+  }
+
+  /**
+   * Find and select the first available morning appointment
+   * @returns {Promise<object|null>} The selected time slot object or null if none available
+   */
+  async findAndSelectFirstMorningSlot() {
+    // Select first available date
+    const dateSelected = await this.selectDate(0);
+
+    if (!dateSelected) {
+      console.log('No dates available');
+      return null;
+    }
+
+    // Get all morning slots
+    const morningSlots = await this.getMorningTimeSlots();
+
+    if (morningSlots.length === 0) {
+      console.log('No morning slots available');
+      return null;
+    }
+
+    // Select the first morning slot
+    const firstSlot = morningSlots[0];
+    const selected = await this.selectTimeSlot(firstSlot.value, firstSlot.selectId);
+
+    if (selected) {
+      console.log(`Selected: ${firstSlot.datetime}`);
+      return firstSlot;
+    }
+
+    return null;
+  }
+
+  /**
+   * Find and select the first available afternoon appointment
+   * @returns {Promise<object|null>} The selected time slot object or null if none available
+   */
+  async findAndSelectFirstAfternoonSlot() {
+    // Select first available date
+    const dateSelected = await this.selectDate(0);
+
+    if (!dateSelected) {
+      console.log('No dates available');
+      return null;
+    }
+
+    // Get all afternoon slots
+    const afternoonSlots = await this.getAfternoonTimeSlots();
+
+    if (afternoonSlots.length === 0) {
+      console.log('No afternoon slots available');
+      return null;
+    }
+
+    // Select the first afternoon slot
+    const firstSlot = afternoonSlots[0];
+    const selected = await this.selectTimeSlot(firstSlot.value, firstSlot.selectId);
+
+    if (selected) {
+      console.log(`Selected: ${firstSlot.datetime}`);
+      return firstSlot;
+    }
+
+    return null;
+  }
 }

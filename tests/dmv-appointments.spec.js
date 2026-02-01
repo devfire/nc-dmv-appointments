@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+ import { test, expect } from '@playwright/test';
 import { AppointmentPage } from '../pages/AppointmentPage.js';
 import { TestHelpers } from '../utils/test-helpers.js';
 
@@ -65,6 +65,21 @@ test.describe('NC DMV Appointment Checker', () => {
             if (apiData && apiData.availableDates && apiData.availableDates.length > 0) {
               const dateStr = apiData.availableDates.join(', ');
               status += ` (earliest: ${dateStr})`;
+            }
+
+            // Get available time slots for the first date
+            try {
+              const dateSelected = await appointmentPage.selectDate(0);
+              if (dateSelected) {
+                const timeSlots = await appointmentPage.getTimeSlots();
+                if (timeSlots.length > 0) {
+                  const times = timeSlots.map(slot => slot.datetime).slice(0, 5); // Show first 5 times
+                  const moreText = timeSlots.length > 5 ? ` (+${timeSlots.length - 5} more)` : '';
+                  status += `\n  Available times: ${times.join(', ')}${moreText}`;
+                }
+              }
+            } catch (error) {
+              console.warn(`Could not retrieve time slots: ${error.message}`);
             }
           }
           console.log(`${result.cityName}: ${status}`);
