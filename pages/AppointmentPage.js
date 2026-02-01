@@ -129,7 +129,7 @@ export class AppointmentPage {
 
     // Navigate with proper wait strategies
     await this.page.goto(url, { waitUntil: 'domcontentloaded' });
-    await this.page.waitForLoadState('networkidle');
+    // await this.page.waitForLoadState('networkidle');
   }
 
   /**
@@ -250,7 +250,7 @@ export class AppointmentPage {
 
     // Wait for network idle with error handling
     try {
-      await this.page.waitForLoadState('networkidle', { timeout: 10000 });
+      // await this.page.waitForLoadState('networkidle', { timeout: 10000 });
     } catch (error) {
       // If page is closed, log but don't fail
       if (this.page.isClosed()) {
@@ -262,7 +262,7 @@ export class AppointmentPage {
     }
 
     // Give a small delay for the API data to be processed
-    await this.page.waitForTimeout(500).catch(() => { });
+    // await this.page.waitForTimeout(500).catch(() => { });
   }
 
   /**
@@ -277,7 +277,7 @@ export class AppointmentPage {
     }
 
     // Wait a moment for the page to stabilize after navigation
-    await this.page.waitForTimeout(500).catch(() => { });
+    // await this.page.waitForTimeout(500).catch(() => { });
 
     // PRIORITY 1: Use captured API data if available
     if (this.appointmentApiData) {
