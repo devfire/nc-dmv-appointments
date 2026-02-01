@@ -491,7 +491,7 @@ export class AppointmentPage {
     for (const selector of selectors) {
       const dates = await this.page.locator(selector).all();
       if (dates.length > 0) {
-        console.log(`Found ${dates.length} dates using selector: ${selector}`);
+        // console.log(`Found ${dates.length} dates using selector: ${selector}`);
         return dates;
       }
     }
