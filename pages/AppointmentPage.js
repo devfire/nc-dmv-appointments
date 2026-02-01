@@ -9,7 +9,7 @@ export class AppointmentPage {
     this.errorHiddenInput = page.locator('input[name="StepControls[1].FieldName"][value="ErrorNoAvaiableDates"]');
     this.appointmentHeading = page.locator('text=Please select date and time');
     this.calendarDates = page.locator('.calendar-day, .ui-datepicker-calendar td:not(.ui-datepicker-unselectable)');
-    
+
     // API response storage
     this.lastApiResponse = null;
     this.appointmentApiData = null;
@@ -23,13 +23,13 @@ export class AppointmentPage {
     await this.page.route('**/Webapp/Appointment/AmendStep*', async (route, request) => {
       // Continue with the request
       const response = await route.fetch();
-      
+
       // Capture the response
       try {
         const contentType = response.headers()['content-type'] || '';
         if (contentType.includes('text/html') || contentType.includes('application/json')) {
           const responseBody = await response.text();
-          
+
           // Store the response for later analysis
           this.lastApiResponse = {
             url: request.url(),
@@ -38,14 +38,14 @@ export class AppointmentPage {
             headers: response.headers(),
             timestamp: new Date().toISOString()
           };
-          
+
           // Parse appointment data if present
           this.appointmentApiData = this.parseAppointmentData(responseBody);
         }
       } catch (error) {
         console.error('Error capturing API response:', error.message);
       }
-      
+
       // Fulfill the original response
       await route.fulfill({ response });
     });
@@ -60,8 +60,7 @@ export class AppointmentPage {
     const data = {
       hasAppointments: false,
       availableDates: [],
-      errorMessage: null,
-      calendarPresent: false
+      errorMessage: null
     };
 
     try {
@@ -78,30 +77,34 @@ export class AppointmentPage {
         }
       }
 
-      // Check for calendar widget presence in HTML
-      data.calendarPresent = responseBody.includes('ui-datepicker') ||
-                            responseBody.includes('calendar-day') ||
-                            responseBody.includes('Please select date and time');
+      // DEFINITIVE INDICATOR: Check for CalendarDateModel in the response
+      // This model ONLY appears when appointments are actually available
+      // This is more reliable than checking for calendar HTML (which may be rendered client-side)
+      const hasCalendarModel = responseBody.includes('OABSEngine.Models.CalendarDateModel');
 
-      // Check for explicit error messages
-      if (responseBody.includes('This office does not currently have any appointments available') ||
-          responseBody.includes('ErrorNoAvaiableDates')) {
-        data.errorMessage = 'No appointments available';
-        data.hasAppointments = false;
-        return data;
+      if (hasCalendarModel) {
+        data.hasAppointments = true;
+
+        // Extract available dates from the response
+        // The dates are in YYYY-MM-DD format in the form data
+        const simpleDateMatches = [...responseBody.matchAll(/(\d{4}-\d{2}-\d{2})/g)];
+        for (const match of simpleDateMatches) {
+          if (!data.availableDates.includes(match[1])) {
+            data.availableDates.push(match[1]);
+          }
+        }
+
+        return data; // Early return - we found appointments
       }
 
-      // If calendar is present, there are likely appointments
-      if (data.calendarPresent) {
-        data.hasAppointments = true;
-        
-        // Try to extract available dates from the HTML
-        // Look for date cells that are not disabled
-        const datePattern = /<td[^>]*(?!ui-datepicker-unselectable)[^>]*data-handler="selectDay"[^>]*>(\d+)<\/td>/gi;
-        let match;
-        while ((match = datePattern.exec(responseBody)) !== null) {
-          data.availableDates.push(match[1]);
-        }
+      // Only check for error if CalendarDateModel is NOT present
+      // Look for the actual visible error span with the specific message
+      const errorPattern = /<span[^>]*class="[^"]*field-validation-error[^"]*"[^>]*>[^<]*This office does not currently have any appointments available[^<]*<\/span>/i;
+      const hasVisibleError = errorPattern.test(responseBody);
+
+      if (hasVisibleError) {
+        data.errorMessage = 'No appointments available';
+        data.hasAppointments = false;
       }
 
     } catch (error) {
@@ -119,11 +122,11 @@ export class AppointmentPage {
   async navigateAndSetup(url, geolocation) {
     // Setup API interception before navigation
     await this.setupApiInterception();
-    
+
     // Grant permissions
     await this.page.context().grantPermissions(['geolocation'], { origin: url });
     await this.page.context().setGeolocation(geolocation);
-    
+
     // Navigate with proper wait strategies
     await this.page.goto(url, { waitUntil: 'domcontentloaded' });
     await this.page.waitForLoadState('networkidle');
@@ -149,7 +152,7 @@ export class AppointmentPage {
     }
 
     let appointmentOption;
-    
+
     if (appointmentTypeId) {
       // Select by data-id attribute
       appointmentOption = this.page.locator(`[data-id="${appointmentTypeId}"].QflowObjectItem`);
@@ -157,7 +160,7 @@ export class AppointmentPage {
       // Select by text content
       appointmentOption = this.page.locator('.QflowObjectItem .form-control-child', { hasText: appointmentTypeText });
     }
-    
+
     await appointmentOption.waitFor({ state: 'visible', timeout: 10000 });
     await appointmentOption.click();
     await this.blockLoader.waitFor({ state: 'hidden', timeout: 10000 });
@@ -215,24 +218,51 @@ export class AppointmentPage {
     // Clear previous API data
     this.lastApiResponse = null;
     this.appointmentApiData = null;
-    
+
     // Wait for the API response when clicking
     const responsePromise = this.page.waitForResponse(
       response => response.url().includes('/Webapp/Appointment/AmendStep'),
       { timeout: 15000 }
     ).catch(() => null);
-    
+
     const unit = this.activeUnits.nth(index);
     await unit.click();
-    
+
     // Wait for the API response to be captured
     await responsePromise;
-    
-    await this.blockLoader.waitFor({ state: 'hidden', timeout: 10000 });
-    await this.page.waitForLoadState('networkidle');
-    
+
+    // Check if page is still valid before waiting for elements
+    if (this.page.isClosed()) {
+      throw new Error('Page was closed unexpectedly after clicking unit');
+    }
+
+    // Wait for loader to hide with better error handling
+    try {
+      await this.blockLoader.waitFor({ state: 'hidden', timeout: 10000 });
+    } catch (error) {
+      // If page is closed, throw a more specific error
+      if (this.page.isClosed()) {
+        throw new Error('Page was closed while waiting for loader to hide');
+      }
+      // Re-throw if it's a different error
+      throw error;
+    }
+
+    // Wait for network idle with error handling
+    try {
+      await this.page.waitForLoadState('networkidle', { timeout: 10000 });
+    } catch (error) {
+      // If page is closed, log but don't fail
+      if (this.page.isClosed()) {
+        console.warn('Page closed before network idle state reached');
+        return;
+      }
+      // For other errors, just log and continue
+      console.warn('Network idle wait timed out:', error.message);
+    }
+
     // Give a small delay for the API data to be processed
-    await this.page.waitForTimeout(500);
+    await this.page.waitForTimeout(500).catch(() => { });
   }
 
   /**
@@ -240,59 +270,64 @@ export class AppointmentPage {
    * @returns {Promise<boolean>} True if appointments are available
    */
   async hasAppointmentsAvailable() {
+    // Check if page is still valid
+    if (this.page.isClosed()) {
+      console.warn('Page is closed, cannot check appointment availability');
+      return false;
+    }
+
     // Wait a moment for the page to stabilize after navigation
-    await this.page.waitForTimeout(500);
-    
+    await this.page.waitForTimeout(500).catch(() => { });
+
     // PRIORITY 1: Use captured API data if available
     if (this.appointmentApiData) {
-      console.log('Using API data for availability check:', {
-        hasAppointments: this.appointmentApiData.hasAppointments,
-        availableDates: this.appointmentApiData.availableDates.length,
-        errorMessage: this.appointmentApiData.errorMessage
-      });
-      
+      // If hasAppointments is explicitly set, use it directly (most reliable)
+      if (this.appointmentApiData.hasAppointments === true) {
+        return true;
+      }
+
       // If there's an explicit error message, no appointments
       if (this.appointmentApiData.errorMessage) {
         return false;
       }
-      
-      // If calendar is present or we have available dates, appointments exist
-      if (this.appointmentApiData.calendarPresent ||
-          this.appointmentApiData.availableDates.length > 0) {
-        return true;
-      }
-      
+
       // If explicitly marked as no appointments
       if (this.appointmentApiData.hasAppointments === false) {
         return false;
       }
     }
-    
+
     // PRIORITY 2: Fallback to DOM-based detection
     console.log('Falling back to DOM-based availability check');
-    
+
+    // Check page validity again before DOM operations
+    if (this.page.isClosed()) {
+      console.warn('Page closed during availability check');
+      return false;
+    }
+
     // First check for positive indicator - the appointment selection heading
     const hasAppointmentHeading = await this.appointmentHeading.isVisible().catch(() => false);
     if (hasAppointmentHeading) {
       return true; // If we see the appointment selector, appointments are available
     }
-    
+
     // Check for error message (negative indicator)
     const errorVisible = await this.noAppointmentsError
       .filter({ hasText: 'This office does not currently have any appointments available' })
       .isVisible()
       .catch(() => false);
-    
+
     if (errorVisible) {
       return false; // Explicit error message
     }
-    
+
     // Check for hidden input indicating no dates (negative indicator)
-    const errorInputCount = await this.errorHiddenInput.count();
+    const errorInputCount = await this.errorHiddenInput.count().catch(() => 0);
     if (errorInputCount > 0) {
       return false; // Hidden error input present
     }
-    
+
     // If no clear positive or negative indicators, return true (optimistic)
     return true;
   }
@@ -321,13 +356,13 @@ export class AppointmentPage {
   async checkLocationAvailability(index) {
     // Get city name before clicking (in case navigation changes things)
     const cityName = await this.getCityName(index);
-    
+
     // Click the location
     await this.clickActiveUnit(index);
-    
+
     // Check availability
     const isAvailable = await this.hasAppointmentsAvailable();
-    
+
     return { cityName, isAvailable };
   }
 
@@ -335,9 +370,33 @@ export class AppointmentPage {
    * Navigate back to the previous page
    */
   async navigateBack() {
+    // Check if page is still valid before navigating
+    if (this.page.isClosed()) {
+      throw new Error('Cannot navigate back - page is closed');
+    }
+
     await this.page.goBack();
-    await this.blockLoader.waitFor({ state: 'hidden', timeout: 10000 });
-    await this.activeUnits.first().waitFor({ state: 'visible', timeout: 10000 });
+
+    // Wait for loader with error handling
+    try {
+      await this.blockLoader.waitFor({ state: 'hidden', timeout: 10000 });
+    } catch (error) {
+      if (this.page.isClosed()) {
+        throw new Error('Page closed while navigating back');
+      }
+      console.warn('Loader wait failed during navigation back:', error.message);
+    }
+
+    // Wait for active units with error handling
+    try {
+      await this.activeUnits.first().waitFor({ state: 'visible', timeout: 10000 });
+    } catch (error) {
+      if (this.page.isClosed()) {
+        throw new Error('Page closed while waiting for active units after navigation');
+      }
+      console.warn('Active units not visible after navigation back:', error.message);
+      throw error; // Re-throw as this is critical
+    }
   }
 
   /**
@@ -371,7 +430,7 @@ export class AppointmentPage {
     console.log('Timestamp:', this.lastApiResponse.timestamp);
     console.log('Content-Type:', this.lastApiResponse.headers['content-type']);
     console.log('Body Length:', this.lastApiResponse.body.length, 'characters');
-    
+
     if (this.appointmentApiData) {
       console.log('\n=== Parsed Appointment Data ===');
       console.log('Has Appointments:', this.appointmentApiData.hasAppointments);
@@ -394,7 +453,7 @@ export class AppointmentPage {
 
     const fs = require('fs');
     const path = require('path');
-    
+
     try {
       const filePath = path.join('test-results', filename);
       fs.writeFileSync(filePath, this.lastApiResponse.body, 'utf8');

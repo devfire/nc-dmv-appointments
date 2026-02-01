@@ -58,7 +58,15 @@ test.describe('NC DMV Appointment Checker', () => {
           const result = await appointmentPage.checkLocationAvailability(i);
           results.push(result);
 
-          const status = result.isAvailable ? '✓ Appointments available' : '✗ Nothing available';
+          // Get appointment details if available
+          let status = result.isAvailable ? '✓ Appointments available' : '✗ Nothing available';
+          if (result.isAvailable) {
+            const apiData = appointmentPage.getAppointmentApiData();
+            if (apiData && apiData.availableDates && apiData.availableDates.length > 0) {
+              const dateStr = apiData.availableDates.join(', ');
+              status += ` (earliest: ${dateStr})`;
+            }
+          }
           console.log(`${result.cityName}: ${status}`);
 
           // Take screenshot if appointments are available
