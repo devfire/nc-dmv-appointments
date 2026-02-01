@@ -6,6 +6,10 @@ Automated Playwright tests to check NC DMV appointment availability across multi
 
 This tool automates the process of checking appointment availability at all NC DMV locations, saving time and effort in finding available appointment slots. Because what's happening now is a pure travesty.
 
+## New: API-Based Detection
+
+The checker now uses API response interception instead of DOM parsing for more reliable appointment detection. This works seamlessly with the DMV's dynamic calendar widget (SPA). See [`API_APPROACH.md`](API_APPROACH.md) for technical details.
+
 ## Prerequisites
 
 - Node.js (v18 or higher recommended)

@@ -9,6 +9,106 @@ export class AppointmentPage {
     this.errorHiddenInput = page.locator('input[name="StepControls[1].FieldName"][value="ErrorNoAvaiableDates"]');
     this.appointmentHeading = page.locator('text=Please select date and time');
     this.calendarDates = page.locator('.calendar-day, .ui-datepicker-calendar td:not(.ui-datepicker-unselectable)');
+    
+    // API response storage
+    this.lastApiResponse = null;
+    this.appointmentApiData = null;
+  }
+
+  /**
+   * Setup API response interception to capture appointment data
+   */
+  async setupApiInterception() {
+    // Intercept API responses for appointment calendar data
+    await this.page.route('**/Webapp/Appointment/AmendStep*', async (route, request) => {
+      // Continue with the request
+      const response = await route.fetch();
+      
+      // Capture the response
+      try {
+        const contentType = response.headers()['content-type'] || '';
+        if (contentType.includes('text/html') || contentType.includes('application/json')) {
+          const responseBody = await response.text();
+          
+          // Store the response for later analysis
+          this.lastApiResponse = {
+            url: request.url(),
+            status: response.status(),
+            body: responseBody,
+            headers: response.headers(),
+            timestamp: new Date().toISOString()
+          };
+          
+          // Parse appointment data if present
+          this.appointmentApiData = this.parseAppointmentData(responseBody);
+        }
+      } catch (error) {
+        console.error('Error capturing API response:', error.message);
+      }
+      
+      // Fulfill the original response
+      await route.fulfill({ response });
+    });
+  }
+
+  /**
+   * Parse appointment availability data from API response
+   * @param {string} responseBody - The HTML or JSON response body
+   * @returns {object} Parsed appointment data
+   */
+  parseAppointmentData(responseBody) {
+    const data = {
+      hasAppointments: false,
+      availableDates: [],
+      errorMessage: null,
+      calendarPresent: false
+    };
+
+    try {
+      // Check for JSON response first
+      if (responseBody.trim().startsWith('{') || responseBody.trim().startsWith('[')) {
+        try {
+          const json = JSON.parse(responseBody);
+          // Handle JSON structure if present
+          data.hasAppointments = json.hasAppointments || false;
+          data.availableDates = json.availableDates || [];
+          return data;
+        } catch (e) {
+          // Not JSON, continue with HTML parsing
+        }
+      }
+
+      // Check for calendar widget presence in HTML
+      data.calendarPresent = responseBody.includes('ui-datepicker') ||
+                            responseBody.includes('calendar-day') ||
+                            responseBody.includes('Please select date and time');
+
+      // Check for explicit error messages
+      if (responseBody.includes('This office does not currently have any appointments available') ||
+          responseBody.includes('ErrorNoAvaiableDates')) {
+        data.errorMessage = 'No appointments available';
+        data.hasAppointments = false;
+        return data;
+      }
+
+      // If calendar is present, there are likely appointments
+      if (data.calendarPresent) {
+        data.hasAppointments = true;
+        
+        // Try to extract available dates from the HTML
+        // Look for date cells that are not disabled
+        const datePattern = /<td[^>]*(?!ui-datepicker-unselectable)[^>]*data-handler="selectDay"[^>]*>(\d+)<\/td>/gi;
+        let match;
+        while ((match = datePattern.exec(responseBody)) !== null) {
+          data.availableDates.push(match[1]);
+        }
+      }
+
+    } catch (error) {
+      console.error('Error parsing appointment data:', error.message);
+    }
+
+    return data;
   }
 
   /**
@@ -17,6 +117,9 @@ export class AppointmentPage {
    * @param {object} geolocation - Object with latitude and longitude
    */
   async navigateAndSetup(url, geolocation) {
+    // Setup API interception before navigation
+    await this.setupApiInterception();
+    
     // Grant permissions
     await this.page.context().grantPermissions(['geolocation'], { origin: url });
     await this.page.context().setGeolocation(geolocation);
@@ -109,19 +212,64 @@ export class AppointmentPage {
    * @param {number} index - The index of the active unit to click
    */
   async clickActiveUnit(index) {
+    // Clear previous API data
+    this.lastApiResponse = null;
+    this.appointmentApiData = null;
+    
+    // Wait for the API response when clicking
+    const responsePromise = this.page.waitForResponse(
+      response => response.url().includes('/Webapp/Appointment/AmendStep'),
+      { timeout: 15000 }
+    ).catch(() => null);
+    
     const unit = this.activeUnits.nth(index);
     await unit.click();
+    
+    // Wait for the API response to be captured
+    await responsePromise;
+    
     await this.blockLoader.waitFor({ state: 'hidden', timeout: 10000 });
     await this.page.waitForLoadState('networkidle');
+    
+    // Give a small delay for the API data to be processed
+    await this.page.waitForTimeout(500);
   }
 
   /**
-   * Check if appointments are available on the current page
+   * Check if appointments are available using API data (preferred) or DOM fallback
    * @returns {Promise<boolean>} True if appointments are available
    */
   async hasAppointmentsAvailable() {
     // Wait a moment for the page to stabilize after navigation
-    await this.page.waitForTimeout(1000);
+    await this.page.waitForTimeout(500);
+    
+    // PRIORITY 1: Use captured API data if available
+    if (this.appointmentApiData) {
+      console.log('Using API data for availability check:', {
+        hasAppointments: this.appointmentApiData.hasAppointments,
+        availableDates: this.appointmentApiData.availableDates.length,
+        errorMessage: this.appointmentApiData.errorMessage
+      });
+      
+      // If there's an explicit error message, no appointments
+      if (this.appointmentApiData.errorMessage) {
+        return false;
+      }
+      
+      // If calendar is present or we have available dates, appointments exist
+      if (this.appointmentApiData.calendarPresent ||
+          this.appointmentApiData.availableDates.length > 0) {
+        return true;
+      }
+      
+      // If explicitly marked as no appointments
+      if (this.appointmentApiData.hasAppointments === false) {
+        return false;
+      }
+    }
+    
+    // PRIORITY 2: Fallback to DOM-based detection
+    console.log('Falling back to DOM-based availability check');
     
     // First check for positive indicator - the appointment selection heading
     const hasAppointmentHeading = await this.appointmentHeading.isVisible().catch(() => false);
@@ -147,6 +295,22 @@ export class AppointmentPage {
     
     // If no clear positive or negative indicators, return true (optimistic)
     return true;
+  }
+
+  /**
+   * Get the last captured API response data
+   * @returns {object|null} The last API response or null
+   */
+  getLastApiResponse() {
+    return this.lastApiResponse;
+  }
+
+  /**
+   * Get the parsed appointment data from the last API call
+   * @returns {object|null} The parsed appointment data or null
+   */
+  getAppointmentApiData() {
+    return this.appointmentApiData;
   }
 
   /**
@@ -182,12 +346,61 @@ export class AppointmentPage {
    */
   async takeScreenshot(filename) {
     try {
-      await this.page.screenshot({ 
-        path: `test-results/${filename}`, 
-        fullPage: true 
+      await this.page.screenshot({
+        path: `test-results/${filename}`,
+        fullPage: true
       });
     } catch (error) {
       console.error(`Failed to take screenshot: ${error.message}`);
+    }
+  }
+
+  /**
+   * Debug method: Log API response details
+   * Useful for troubleshooting API-based appointment detection
+   */
+  logApiResponseDetails() {
+    if (!this.lastApiResponse) {
+      console.log('No API response captured yet');
+      return;
+    }
+
+    console.log('=== API Response Details ===');
+    console.log('URL:', this.lastApiResponse.url);
+    console.log('Status:', this.lastApiResponse.status);
+    console.log('Timestamp:', this.lastApiResponse.timestamp);
+    console.log('Content-Type:', this.lastApiResponse.headers['content-type']);
+    console.log('Body Length:', this.lastApiResponse.body.length, 'characters');
+    
+    if (this.appointmentApiData) {
+      console.log('\n=== Parsed Appointment Data ===');
+      console.log('Has Appointments:', this.appointmentApiData.hasAppointments);
+      console.log('Calendar Present:', this.appointmentApiData.calendarPresent);
+      console.log('Available Dates:', this.appointmentApiData.availableDates);
+      console.log('Error Message:', this.appointmentApiData.errorMessage || 'None');
+    }
+    console.log('=============================\n');
+  }
+
+  /**
+   * Debug method: Save API response body to file
+   * @param {string} filename - Filename to save the response (default: api-response.html)
+   */
+  async saveApiResponseToFile(filename = 'api-response.html') {
+    if (!this.lastApiResponse) {
+      console.log('No API response to save');
+      return;
+    }
+
+    const fs = require('fs');
+    const path = require('path');
+    
+    try {
+      const filePath = path.join('test-results', filename);
+      fs.writeFileSync(filePath, this.lastApiResponse.body, 'utf8');
+      console.log(`API response saved to: ${filePath}`);
+    } catch (error) {
+      console.error(`Failed to save API response: ${error.message}`);
     }
   }
 }
